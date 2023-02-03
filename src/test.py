@@ -5,6 +5,7 @@ import os.path
 import os
 import math
 import datetime, time
+import random
 import numpy as np
 from sklearn import preprocessing, model_selection
 from sklearn.decomposition import PCA
@@ -37,6 +38,7 @@ OFA_MODEL=True
 if use_framework==TORCH and OFA_MODEL:
     import json
     sys.path.append("../once-for-all")
+    #sys.path.append("D:/src_code/my/my-once-for-all")
     from ofa.imagenet_classification.networks.mobilenet_v3 import MobileNetV3
     from ofa.imagenet_classification.elastic_nn.networks import OFAMobileNetV3
     
@@ -266,7 +268,10 @@ def get_single_image_per_class_cv(y, n_splits=10,random_state=0):
 
 def classifier_tester(classifier,x,y):
     sss=get_single_image_per_class_cv(y)
+    print(sss)
     #sss=model_selection.StratifiedShuffleSplit(n_splits=1, test_size=0.5, random_state=0)
+    print(x)
+    print(y)
     scores=model_selection.cross_validate(classifier,x, y, scoring='accuracy',cv=sss)
     acc=scores['test_score']
     print('accuracies=',acc*100)
@@ -295,10 +300,11 @@ def get_cnn_model():
                     cnn_model.load_state_dict(state_dict)
                     #print(cnn_model)
                 else:
-                    model_name='subnet_device_865_acc_98.3_lut_12.1ms_w12_d234_nac_gbdt'
-                    #model_name='subnet_device_865_acc_97.8_lut_9.15ms_w12_d234_nac_gbdt'
+                    #model_name='subnet_device_865_acc_98.3_lut_12.1ms_w12_d234_nac_gbdt'
+                    model_name='subnet_device_865_acc_97.8_lut_9.15ms_w12_d234_nac_gbdt'
                     #model_name='subnet_device_765_acc_98.3_lut_34.6ms_w12_d234_nac_gbdt'
                     #model_name='subnet_device_765_acc_97.7_lut_24.45ms_w12_d234_nac_gbdt'
+                    #model_name='subnet_device_865_acc_100.0_lut_9.15ms_w12_d234_nac_gbdt'
 
                     #model_name='subnet_device_865_acc_97.9_lut_12.1ms_w12_d234_reg_predictor'
                     #model_name='subnet_device_865_acc_97.7_lut_9.15ms_w12_d234_reg_predictor'
@@ -361,10 +367,35 @@ def test_lfw_recognition():
             dirs_and_files=np.array(get_files(DATASET_PATH))
         else: #LFW and YTF concatenation
             subjects = (line.rstrip('\n') for line in open('lfw_ytf_classes.txt'))
-            dirs_and_files=np.array([[d,os.path.join(d,f)] for d in subjects for f in next(os.walk(os.path.join(DATASET_PATH,d)))[2] if is_image(f)])
+            dirs_and_files=np.array([[d,os.path.join(d,f)] for d in subjects for f in sorted(next(os.walk(os.path.join(DATASET_PATH,d)))[2]) if is_image(f)])
             
         dirs=dirs_and_files[:,0]
         files=dirs_and_files[:,1]
+        
+        if False:
+            print(files[:10])
+            from torchvision import transforms
+            test_transforms = transforms.Compose(
+                [
+                    transforms.Resize((224,224)),
+                    #transforms.Resize((260,260)),
+                    #transforms.Resize((160,160)),
+                    #transforms.Resize((196,196)),
+                    #transforms.RandomHorizontalFlip(),
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                 std=[0.229, 0.224, 0.225])
+                ]
+            )
+            fpath=os.path.join(DATASET_PATH,files[0])
+            print(fpath)
+            img = Image.open(fpath)
+            img_tensor = test_transforms(img)
+            img_tensor.unsqueeze_(0)
+            scores = cnn_model(img_tensor.to('cuda'))
+            scores=scores.data.cpu().numpy()
+            print(scores.shape,scores)
+            sys.exit(0)
 
         label_enc=preprocessing.LabelEncoder()
         label_enc.fit(dirs)
@@ -398,13 +429,15 @@ def test_lfw_recognition():
         classifiers=[]
         #classifiers.append(['lightGBM',LGBMClassifier(max_depth=3,n_estimators=200)])
         #classifiers.append(['xgboost',XGBClassifier(max_depth=3,n_estimators=200)])
-        classifiers.append(['k-NN+PCA',Pipeline(steps=[('pca', PCA(n_components=pca_components)), ('classifier', KNeighborsClassifier(n_neighbors=1,p=2))])])
+        #classifiers.append(['k-NN+PCA',Pipeline(steps=[('pca', PCA(n_components=pca_components)), ('classifier', KNeighborsClassifier(n_neighbors=1,p=2))])])
         classifiers.append(['k-NN',KNeighborsClassifier(n_neighbors=1,p=2)])
         #classifiers.append(['k-NN chisq',KNeighborsClassifier(n_neighbors=1,metric=chi2dist)])
         #classifiers.append(['k-NN KL',KNeighborsClassifier(n_neighbors=1,metric=KL_dist)])
         #classifiers.append(['rf',RandomForestClassifier(n_estimators=100,max_depth=10)])
         #classifiers.append(['svm',SVC()])
         #classifiers.append(['linear svm',LinearSVC()])
+        np.random.seed(123)
+        random.seed(123)
         for cls_name,classifier in classifiers:
             print(cls_name)
             classifier_tester(classifier,X_norm,y)
