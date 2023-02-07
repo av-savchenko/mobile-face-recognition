@@ -268,10 +268,7 @@ def get_single_image_per_class_cv(y, n_splits=10,random_state=0):
 
 def classifier_tester(classifier,x,y):
     sss=get_single_image_per_class_cv(y)
-    print(sss)
     #sss=model_selection.StratifiedShuffleSplit(n_splits=1, test_size=0.5, random_state=0)
-    print(x)
-    print(y)
     scores=model_selection.cross_validate(classifier,x, y, scoring='accuracy',cv=sss)
     acc=scores['test_score']
     print('accuracies=',acc*100)
@@ -294,7 +291,7 @@ def get_cnn_model():
 
         if MY_TORCH_MODEL:
             if OFA_MODEL:
-                if False:
+                if True:
                     cnn_model = OFAMobileNetV3(n_classes=9131,dropout_rate=0.,width_mult=1.2, ks_list= [3, 5, 7],expand_ratio_list=[3, 4, 6],depth_list=[2, 3, 4])
                     state_dict = torch.load('../models/ofa_mbv3_model_best_new.pth.tar', map_location="cpu")["state_dict"]
                     cnn_model.load_state_dict(state_dict)
@@ -320,6 +317,7 @@ def get_cnn_model():
                     #cnn_model=get_model_artifacts('D:/src_code/DNN_models/ofa_subnets',model_name)
                     print(model_name)
                 cnn_model.classifier=torch.nn.Identity()
+                print('Number of parameters:',sum([p.numel() for p in cnn_model.parameters()]),sum([p.numel() for p in cnn_model.parameters() if p.requires_grad]))
             elif True:
                 cnn_model=timm.create_model('tf_efficientnet_b0_ns', pretrained=False)
                 cnn_model.classifier=torch.nn.Identity()
