@@ -17,11 +17,14 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            ndk {
+                abiFilters "arm64-v8a"
+            }
         }
         packagingOptions {
             pickFirst 'lib/arm64-v8a/libc++_shared.so'
-            pickFirst 'lib/x86/libc++_shared.so'
-            pickFirst 'lib/x86_64/libc++_shared.so'
+            //pickFirst 'lib/x86/libc++_shared.so'
+            //pickFirst 'lib/x86_64/libc++_shared.so'
         }
     }
     aaptOptions {
@@ -39,13 +42,16 @@ dependencies {
     implementation 'org.tensorflow:tensorflow-android:+'
     implementation 'org.tensorflow:tensorflow-lite-gpu:+'
     implementation 'org.tensorflow:tensorflow-lite-support:+'
-    implementation 'org.pytorch:pytorch_android_lite:1.9.0'
-    implementation 'org.pytorch:pytorch_android_torchvision:1.9.0'
+    implementation 'org.pytorch:pytorch_android_lite:+'
+    //implementation 'org.pytorch:pytorch_android_torchvision:+'
     testImplementation 'junit:junit:4.12'
     androidTestImplementation 'androidx.test.ext:junit:1.1.2'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.3.0'
-    implementation "androidx.core:core-ktx:+"
+    implementation "androidx.core:core-ktx:1.5.0"
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
-    implementation project(':opencv')
     //implementation 'com.microsoft.onnxruntime:onnxruntime-mobile:latest.release'
+
+    def camerax_version = "1.0.0-alpha01"
+    implementation("androidx.camera:camera-core:${camerax_version}")
+    implementation("androidx.camera:camera-camera2:${camerax_version}")
 }

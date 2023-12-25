@@ -42,10 +42,10 @@ public abstract class TfLiteClassifier  implements DeepModel{
 
     public TfLiteClassifier(final Context context, final String model_path, boolean useGPU) throws IOException {
         Interpreter.Options options = (new Interpreter.Options()).setNumThreads(4);//.addDelegate(delegate);
-        if (useGPU) {
-            org.tensorflow.lite.gpu.GpuDelegate.Options opt=new org.tensorflow.lite.gpu.GpuDelegate.Options();
-            opt.setInferencePreference(org.tensorflow.lite.gpu.GpuDelegate.Options.INFERENCE_PREFERENCE_SUSTAINED_SPEED);
-            org.tensorflow.lite.gpu.GpuDelegate delegate = new org.tensorflow.lite.gpu.GpuDelegate(opt);
+        if (false && useGPU) {
+            //org.tensorflow.lite.gpu.GpuDelegate.Options opt=new org.tensorflow.lite.gpu.GpuDelegate.Options();
+            //opt.setInferencePreference(org.tensorflow.lite.gpu.GpuDelegate.Options.INFERENCE_PREFERENCE_SUSTAINED_SPEED);
+            org.tensorflow.lite.gpu.GpuDelegate delegate = new org.tensorflow.lite.gpu.GpuDelegate();
             options.addDelegate(delegate);
         }
 

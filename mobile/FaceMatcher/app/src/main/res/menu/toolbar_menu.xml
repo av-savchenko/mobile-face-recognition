@@ -13,5 +13,9 @@
         android:id="@+id/action_computeRunningTime"
         app:showAsAction="never"
         android:title="@string/action_measurePerf"/>
+    <item
+        android:id="@+id/action_capturecamera"
+        app:showAsAction="never"
+        android:title="@string/action_CaptureCamera"/>
 
 </menu>

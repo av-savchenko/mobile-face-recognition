@@ -25,7 +25,7 @@ if __name__ == '__main__':
     output_model_dir='../mobile/FaceMatcher/app/src/main/assets'
     INPUT_SIZE=224
     example = torch.rand(1, 3, INPUT_SIZE, INPUT_SIZE)
-    model_dir='../models/ofa_subnets'
+    model_dir='../models/ofa_subnets/face_recognition/'
     for model_name in os.listdir(model_dir):
         filename=os.path.join(output_model_dir,model_name)
         if not os.path.exists(filename+'.ptl'):

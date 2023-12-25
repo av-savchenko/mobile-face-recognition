@@ -1,6 +1,7 @@
 package com.asav.facematcher;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.camera.core.*;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
@@ -9,13 +10,15 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.*;
 import android.media.ExifInterface;
+import android.media.Image;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.SystemClock;
 import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
 import android.util.Pair;
-import android.view.Display;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.*;
@@ -23,13 +26,10 @@ import android.widget.*;
 import com.asav.facematcher.mtcnn.Box;
 import com.asav.facematcher.mtcnn.MTCNN;
 
-import org.opencv.android.*;
-import org.opencv.core.*;
-import org.opencv.core.Point;
-import org.opencv.imgproc.Imgproc;
 import org.tensorflow.lite.gpu.CompatibilityList;
 
 import java.io.*;
+import java.nio.ByteBuffer;
 import java.util.*;
 
 public class MainActivity extends AppCompatActivity {
@@ -37,12 +37,15 @@ public class MainActivity extends AppCompatActivity {
     private final int REQUEST_CODE_ASK_MULTIPLE_PERMISSIONS = 124;
 
     private ImageView imageView=null;
-    private Mat sampledImage=null;
+    private Bitmap sampledImage=null;
     private static int minFaceSize=40;
     private MTCNN mtcnnFaceDetector=null;
 
     private List<DeepModel> deepModels =new ArrayList<>();
     private Random rnd=new Random();
+
+    private HandlerThread mBackgroundThread=null;
+    private Handler mBackgroundHandler=null;
 
     private TextView textView;
     private Spinner modelsSpinner;
@@ -115,37 +118,6 @@ public class MainActivity extends AppCompatActivity {
         getMenuInflater().inflate(R.menu.toolbar_menu, menu);
         return true;
     }
-
-    private BaseLoaderCallback mLoaderCallback = new BaseLoaderCallback(this) {
-        @Override
-        public void onManagerConnected(int status) {
-            switch (status) {
-                case LoaderCallbackInterface.SUCCESS:
-                {
-                    Log.i(TAG, "OpenCV loaded successfully");
-                } break;
-                default:
-                {
-                    super.onManagerConnected(status);
-                    Toast.makeText(getApplicationContext(),
-                            "OpenCV error",
-                            Toast.LENGTH_SHORT).show();
-                } break;
-            }
-        }
-    };
-    @Override
-    public void onResume()
-    {
-        super.onResume();
-        if (!OpenCVLoader.initDebug()) {
-            Log.d(TAG, "Internal OpenCV library not found. Using OpenCV Manager for initialization");
-            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION, this, mLoaderCallback);
-        } else {
-            Log.d(TAG, "OpenCV library found inside package. Using it!");
-            mLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
-        }
-    }
     private String[] getRequiredPermissions() {
         try {
             PackageInfo info =
@@ -171,9 +143,6 @@ public class MainActivity extends AppCompatActivity {
         }
         return true;
     }
-
-
-
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         switch (requestCode) {
@@ -210,15 +179,29 @@ public class MainActivity extends AppCompatActivity {
     public boolean onOptionsItemSelected(MenuItem item) {
         switch (item.getItemId()) {
             case R.id.action_openGallery:
-                openImageFile(SELECT_PICTURE);
+                if(!isCameraRunning()) {
+                    openImageFile(SELECT_PICTURE);
+                }
                 return true;
             case R.id.action_matchfaces:
-                if(isImageLoaded()) {
+                if(!isCameraRunning() && isImageLoaded()) {
                     openImageFile(SELECT_TEMPLATE_PICTURE_MATCH);
                 }
                 return true;
             case R.id.action_computeRunningTime:
-                action_computeRunningTime();
+                if(!isCameraRunning()) {
+                    action_computeRunningTime();
+                }
+                return true;
+            case R.id.action_capturecamera:
+                if(mBackgroundThread==null){
+                    item.setTitle(R.string.action_StopCamera);
+                    setupCameraX();
+                }
+                else{
+                    item.setTitle(R.string.action_CaptureCamera);
+                    stopCamera();
+                }
                 return true;
             default:
                 // If we got here, the user's action was not recognized.
@@ -233,6 +216,86 @@ public class MainActivity extends AppCompatActivity {
                     Toast.LENGTH_SHORT).show();
         return sampledImage!=null;
     }
+    private boolean isCameraRunning(){
+        if(mBackgroundThread!=null)
+            Toast.makeText(getApplicationContext(),
+                    "Stop camera firstly",
+                    Toast.LENGTH_SHORT).show();
+        return mBackgroundThread!=null;
+    }
+    private void setupCameraX() {
+        PreviewConfig previewConfig = new PreviewConfig.Builder()
+                .setLensFacing(CameraX.LensFacing.FRONT)
+                .build();
+        Preview preview = new Preview(previewConfig);
+        mBackgroundThread = new HandlerThread("AnalysisThread");
+        mBackgroundThread.start();
+        mBackgroundHandler = new Handler(mBackgroundThread.getLooper());
+
+        ImageAnalysis imageAnalysis = new ImageAnalysis(new ImageAnalysisConfig.Builder()
+                .setLensFacing(CameraX.LensFacing.FRONT)
+                .setCallbackHandler(mBackgroundHandler)
+                .setImageReaderMode(ImageAnalysis.ImageReaderMode.ACQUIRE_LATEST_IMAGE)
+                .build());
+        imageAnalysis.setAnalyzer(
+                new ImageAnalysis.Analyzer() {
+                    public void analyze(ImageProxy image, int rotationDegrees) {
+                        sampledImage=imgToBitmap(image.getImage(), rotationDegrees);
+                        processVideoFrame();
+                    }
+                }
+        );
+
+        CameraX.unbindAll();
+        CameraX.bindToLifecycle(this, preview, imageAnalysis);
+    }
+    private Bitmap imgToBitmap(Image image, int rotationDegrees) {
+        // NV21 is a plane of 8 bit Y values followed by interleaved  Cb Cr
+        ByteBuffer ib = ByteBuffer.allocate(image.getHeight() * image.getWidth() * 2);
+
+        ByteBuffer y = image.getPlanes()[0].getBuffer();
+        ByteBuffer cr = image.getPlanes()[1].getBuffer();
+        ByteBuffer cb = image.getPlanes()[2].getBuffer();
+        ib.put(y);
+        ib.put(cb);
+        ib.put(cr);
+
+        YuvImage yuvImage = new YuvImage(ib.array(),
+                ImageFormat.NV21, image.getWidth(), image.getHeight(), null);
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        yuvImage.compressToJpeg(new Rect(0, 0,
+                image.getWidth(), image.getHeight()), 50, out);
+        byte[] imageBytes = out.toByteArray();
+        Bitmap bm = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
+        Bitmap bitmap = bm;
+
+        // On android the camera rotation and the screen rotation
+        // are off by 90 degrees, so if you are capturing an image
+        // in "portrait" orientation, you'll need to rotate the image.
+        if (rotationDegrees != 0) {
+            Matrix matrix = new Matrix();
+            matrix.postRotate(rotationDegrees);
+            Bitmap scaledBitmap = Bitmap.createScaledBitmap(bm,
+                    bm.getWidth(), bm.getHeight(), true);
+            bitmap = Bitmap.createBitmap(scaledBitmap, 0, 0,
+                    scaledBitmap.getWidth(), scaledBitmap.getHeight(), matrix, true);
+        }
+        return bitmap;
+    }
+    private void stopCamera() {
+        CameraX.unbindAll();
+        mBackgroundThread.quitSafely();
+        try {
+            mBackgroundThread.join();
+        } catch (InterruptedException e) {
+            Log.e(TAG, "Exception stoppingCamera!", e);
+        }
+        mBackgroundThread = null;
+        mBackgroundHandler = null;
+    }
+
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -240,88 +303,38 @@ public class MainActivity extends AppCompatActivity {
             if (requestCode == SELECT_PICTURE) {
                 Uri selectedImageUri = data.getData(); //The uri with the location of the file
                 Log.d(TAG, "uri" + selectedImageUri);
-                sampledImage=convertToMat(selectedImageUri);
+                sampledImage=getImage(selectedImageUri);
                 if(sampledImage!=null)
                     displayImage(sampledImage);
             }
             else if(requestCode==SELECT_TEMPLATE_PICTURE_MATCH){
                 Uri selectedImageUri = data.getData(); //The uri with the location of the file
-                Mat imageToMatch=convertToMat(selectedImageUri);
+                Bitmap imageToMatch=getImage(selectedImageUri);
                 matchFaces(sampledImage,imageToMatch);
             }
         }
     }
-    private Mat convertToMat(Uri selectedImageUri)
+    private void displayImage(Bitmap bitmap)
     {
-        Mat resImage=null;
-        try {
-            InputStream ims = getContentResolver().openInputStream(selectedImageUri);
-            Bitmap bmp= BitmapFactory.decodeStream(ims);
-            Mat rgbImage=new Mat();
-            Utils.bitmapToMat(bmp, rgbImage);
-            ims.close();
-            ims = getContentResolver().openInputStream(selectedImageUri);
-            ExifInterface exif = new ExifInterface(ims);//selectedImageUri.getPath());
-            int orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION,1);
-            switch (orientation)
-            {
-                case ExifInterface.ORIENTATION_ROTATE_90:
-                    //get the mirrored image
-                    rgbImage=rgbImage.t();
-                    //flip on the y-axis
-                    Core.flip(rgbImage, rgbImage, 1);
-                    break;
-                case ExifInterface.ORIENTATION_ROTATE_270:
-                    //get up side down image
-                    rgbImage=rgbImage.t();
-                    //Flip on the x-axis
-                    Core.flip(rgbImage, rgbImage, 0);
-                    break;
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                imageView.setImageBitmap(bitmap);
             }
-
-            Display display = getWindowManager().getDefaultDisplay();
-            android.graphics.Point size = new android.graphics.Point();
-            display.getSize(size);
-            int width = size.x;
-            int height = size.y;
-            double downSampleRatio= calculateSubSampleSize(rgbImage,width,height);
-            resImage=new Mat();
-            Imgproc.resize(rgbImage, resImage, new
-                    Size(),downSampleRatio,downSampleRatio,Imgproc.INTER_AREA);
-        } catch (Exception e) {
-            Log.e(TAG, "Exception thrown: " + e+" "+Log.getStackTraceString(e));
-            resImage=null;
-        }
-        return resImage;
-    }
-    private static double calculateSubSampleSize(Mat srcImage, int reqWidth,
-                                                 int reqHeight) {
-        final int height = srcImage.height();
-        final int width = srcImage.width();
-        double inSampleSize = 1;
-        if (height > reqHeight || width > reqWidth) {
-            final double heightRatio = (double) reqHeight / (double) height;
-            final double widthRatio = (double) reqWidth / (double) width;
-            inSampleSize = heightRatio<widthRatio ? heightRatio :widthRatio;
-        }
-        return inSampleSize;
-    }
-    private void displayImage(Mat image)
-    {
-        Bitmap bitmap = Bitmap.createBitmap(image.cols(),
-                image.rows(),Bitmap.Config.RGB_565);
-        Utils.matToBitmap(image, bitmap);
-        imageView.setImageBitmap(bitmap);
+        });
     }
 
-
-    private void matchFaces(Mat img1, Mat img2){
-        Mat resImage = new Mat();
-        if(img2.rows()!=img1.rows()){
-            Imgproc.resize(img2,img2,img1.size());
+    private void matchFaces(Bitmap img1, Bitmap img2){
+        if(img2.getHeight()!=img1.getHeight()){
+            img2=Bitmap.createScaledBitmap(img2, img1.getWidth(), img1.getHeight(), false);
         }
-        List<Mat> src = Arrays.asList(img1, img2);
-        Core.hconcat(src, resImage);
+        Bitmap resImage = Bitmap.createBitmap(img1.getWidth()+img2.getWidth(), img1.getHeight(), img1.getConfig());
+        Canvas canvas = new Canvas(resImage);
+        Paint paint = new Paint();
+        paint.setColor(Color.RED);
+        paint.setStrokeWidth(5);
+        canvas.drawBitmap(img1, 0f, 0f, null);
+        canvas.drawBitmap(img2, img1.getWidth(), 0f, null);
         List<FaceFeatures> features1=getFacesFeatures(img1);
         List<FaceFeatures> features2=getFacesFeatures(img2);
         for(FaceFeatures face1 : features1){
@@ -340,19 +353,14 @@ public class MainActivity extends AppCompatActivity {
             }
             if(bestFace!=null && minDist<1){
                 float x=bestFace.centerX;
-                Imgproc.line(resImage,new Point(face1.centerX*img1.cols(),face1.centerY*img1.rows()),
-                        new Point(img1.cols()+bestFace.centerX*img2.cols(),bestFace.centerY*img2.rows()),
-                        new Scalar(255,0,0),5);
+                canvas.drawLine(face1.centerX*img1.getWidth(),face1.centerY*img1.getHeight(), img1.getWidth()+bestFace.centerX*img2.getWidth(),bestFace.centerY*img2.getHeight(), paint);
                 Log.i(TAG,"distance "+minDist);
             }
         }
         displayImage(resImage);
     }
-    private List<FaceFeatures> getFacesFeatures(Mat img){
+    private List<FaceFeatures> getFacesFeatures(Bitmap bmp){
         DeepModel featureExtractor= deepModels.get(modelsSpinner.getSelectedItemPosition());
-        Bitmap bmp = Bitmap.createBitmap(img.cols(), img.rows(),Bitmap.Config.RGB_565);
-        Utils.matToBitmap(img, bmp);
-
         Bitmap resizedBitmap=bmp;
         double minSize=600.0;
         double scale=Math.min(bmp.getWidth(),bmp.getHeight())/minSize;
@@ -368,28 +376,115 @@ public class MainActivity extends AppCompatActivity {
         for (Box box : bboxes) {
             android.graphics.Rect bbox = new android.graphics.Rect(Math.max(0,bmp.getWidth()*box.left() / resizedBitmap.getWidth()),
                     Math.max(0,bmp.getHeight()* box.top() / resizedBitmap.getHeight()),
-                    bmp.getWidth()* box.right() / resizedBitmap.getWidth(),
-                    bmp.getHeight() * box.bottom() / resizedBitmap.getHeight()
+                    Math.min(bmp.getWidth(),bmp.getWidth()* box.right() / resizedBitmap.getWidth()),
+                    Math.min(bmp.getHeight(), bmp.getHeight() * box.bottom() / resizedBitmap.getHeight())
             );
             Bitmap faceBitmap = Bitmap.createBitmap(bmp, bbox.left, bbox.top, bbox.width(), bbox.height());
             FacialEmbeddings res=featureExtractor.processImage(faceBitmap);
-            facesInfo.add(new FaceFeatures(res.features,0.5f*(box.left()+box.right()) / resizedBitmap.getWidth(),0.5f*(box.top()+box.bottom()) / resizedBitmap.getHeight()));
+            facesInfo.add(new FaceFeatures(res.features,1f*box.left() / resizedBitmap.getWidth(),1f*box.top()/ resizedBitmap.getHeight(),1f*box.right() / resizedBitmap.getWidth(),1f*box.bottom() / resizedBitmap.getHeight()));
         }
         return facesInfo;
     }
     private class FaceFeatures{
-        public FaceFeatures(float[] feat, float x, float y){
+        public FaceFeatures(float[] feat, float left, float top, float right, float bottom){
             features=feat;
-            centerX=x;
-            centerY=y;
+            centerX=0.5f*(left+right);
+            centerY=0.5f*(top+bottom);
+            this.left=Math.max(0.f,Math.min(1f,left));
+            this.top=Math.max(0.f,Math.min(1f,top));
+            this.right=Math.max(0.f,Math.min(1f,right));
+            this.bottom=Math.max(0.f,Math.min(1f,bottom));
         }
         public float[] features;
         public float centerX,centerY;
+        public float left,top,right,bottom;
     }
+    private static String[] emotions={"","Anger", "Contempt", "Disgust", "Fear", "Happiness", "Neutral", "Sadness", "Surprise"};
+
+    public static String getEmotion(float[] emotionScores){
+        int bestInd=-1;
+        if (emotionScores!=null && emotionScores.length==emotions.length-1){
+            float maxScore=0;
+            for(int i=0;i<emotionScores.length;++i){
+                if(maxScore<emotionScores[i]){
+                    maxScore=emotionScores[i];
+                    bestInd=i;
+                }
+            }
+        }
+        return emotions[bestInd+1];
+    }
+    private void processVideoFrame(){
+        Bitmap bmp = sampledImage;
+        List<FaceFeatures> features=getFacesFeatures(sampledImage);
+        Bitmap tempBmp = Bitmap.createBitmap(bmp.getWidth(), bmp.getHeight(), Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(tempBmp);
+        Paint p = new Paint();
+        p.setStyle(Paint.Style.STROKE);
+        p.setAntiAlias(true);
+        p.setFilterBitmap(true);
+        p.setDither(true);
+        p.setColor(Color.BLUE);
+        p.setStrokeWidth(5);
+        p.setColor(Color.RED);
+
+        Paint p_text = new Paint();
+        p_text.setColor(Color.WHITE);
+        p_text.setStyle(Paint.Style.FILL);
+        p_text.setColor(Color.BLUE);
+        p_text.setTextSize(24);
+
+        c.drawBitmap(bmp, 0, 0, null);
+
+        for(FaceFeatures face : features){
+            android.graphics.Rect bbox = new android.graphics.Rect((int)(face.left*bmp.getWidth()),(int)(face.top*bmp.getHeight()), (int)(face.right*bmp.getWidth()), (int)(face.bottom*bmp.getHeight()));
+            c.drawRect(bbox, p);
+            String res=getEmotion(face.features);
+            c.drawText(res, Math.max(0,bbox.left), Math.max(0, bbox.top - 20), p_text);
+            Log.i(TAG, res);
+        }
+        displayImage(tempBmp);
+    }
+
 
     private void action_computeRunningTime(){
         Pair<Double,Double> res= deepModels.get(modelsSpinner.getSelectedItemPosition()).testPerformance(numAttempts,numStartAttempts);
         textView.setText(String.format("%s mean=%.3f std=%.3f",modelsSpinner.getSelectedItem(),res.first,res.second));
+    }
+    private Bitmap getImage(Uri selectedImageUri)
+    {
+        Bitmap bmp=null;
+        try {
+            InputStream ims = getContentResolver().openInputStream(selectedImageUri);
+            bmp= BitmapFactory.decodeStream(ims);
+            ims.close();
+            ims = getContentResolver().openInputStream(selectedImageUri);
+            ExifInterface exif = new ExifInterface(ims);//selectedImageUri.getPath());
+            int orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION,1);
+            int degreesForRotation=0;
+            switch (orientation)
+            {
+                case ExifInterface.ORIENTATION_ROTATE_90:
+                    degreesForRotation=90;
+                    break;
+                case ExifInterface.ORIENTATION_ROTATE_270:
+                    degreesForRotation=270;
+                    break;
+                case ExifInterface.ORIENTATION_ROTATE_180:
+                    degreesForRotation=180;
+                    break;
+            }
+            if(degreesForRotation!=0) {
+                Matrix matrix = new Matrix();
+                matrix.setRotate(degreesForRotation);
+                bmp=Bitmap.createBitmap(bmp, 0, 0, bmp.getWidth(),
+                        bmp.getHeight(), matrix, true);
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "Exception thrown: " + e+" "+Log.getStackTraceString(e));
+        }
+        return bmp;
     }
 
 }

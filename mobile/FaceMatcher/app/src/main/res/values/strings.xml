@@ -3,4 +3,6 @@
     <string name="action_OpenGallery">Open...</string>
     <string name="action_matchFaces">Match faces</string>
     <string name="action_measurePerf">Compute running time</string>
+    <string name="action_CaptureCamera">Capture Camera</string>
+    <string name="action_StopCamera">Stop Camera</string>
 </resources>
