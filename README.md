@@ -13,7 +13,7 @@ If you use our models, please cite the following papers:
 ```BibTex
 @inproceedings{savchenko2024,
   title={Device-Specific Facial Descriptors: Winning a Lottery with a SuperNet},
-  author={Savchenko, Andrey V and Savchenko, Lyudmila V},
-  booktitle={International Joint Conference on Artificial Intelligence (IJCAI) - under review},
+  author={Savchenko, Andrey V and Savchenko, Lyudmila V and Makarov, Ilya},
+  booktitle={European Conference on Artificial Intelligence (ECAI) - under review},
 }
 ```
