@@ -11,9 +11,31 @@ The demo Android application is available at our [Google drive](https://drive.go
 If you use our models, please cite the following papers:
 
 ```BibTex
-@inproceedings{savchenko2024,
+@incollection{savchenko2024device,
   title={Device-Specific Facial Descriptors: Winning a Lottery with a SuperNet},
-  author={Savchenko, Andrey V and Savchenko, Lyudmila V and Makarov, Ilya},
-  booktitle={European Conference on Artificial Intelligence (ECAI) - under review},
+  author={Savchenko, Andrey and Maslov, Dmitry and Makarov, Ilya},
+  booktitle={ECAI},
+  pages={4439--4442},
+  year={2024},
+  publisher={IOS Press}
+}
+
+@article{savchenko2024autoface,
+  author={Savchenko, Andrey V.},
+  journal={IEEE Access}, 
+  title={{AutoFace}: How to Obtain Mobile Neural Network-Based Facial Feature Extractor in Less Than 10 Minutes?}, 
+  year={2024},
+  volume={12},
+  pages={25106-25118},
+  doi={10.1109/ACCESS.2024.3365928}}
+
+@article{savchenko2023fast,
+  author={Savchenko, Andrey V. and Savchenko, Lyudmila V. and Makarov, Ilya},
+  journal={IEEE Access}, 
+  title={Fast Search of Face Recognition Model for a Mobile Device Based on Neural Architecture Comparator}, 
+  year={2023},
+  volume={11},
+  pages={65977-65990},
+  doi={10.1109/ACCESS.2023.3290902}
 }
 ```
